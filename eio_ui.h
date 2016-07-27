@@ -34,6 +34,7 @@ namespace emergent
         class Slider;
         class ColorSelector;
         class PathEditor;
+        class Separator;
     }
     
     namespace geom
@@ -59,6 +60,9 @@ public:
     string  m_Name;
     void    setName(string name) { m_Name = name; }
     
+    void setBackgroundColor(ColorA c) {m_BackgroundColor = c;}
+    void setForegroundColor(ColorA c) {m_ForegroundColor = c;}
+    
 protected:
     Rectf   m_Rect;
     ColorA  m_BackgroundColor;
@@ -69,9 +73,22 @@ protected:
     {
         return m_Rect.contains(event.getPos()) ? true : false;
     }
+};
+
+class emergent::ui::Separator : public UiComponentBase
+{
+public:
+    Separator(vec2 p1, vec2 p2) : m_P1(p1), m_P2(p2){}
+    Separator(Rectf r) : UiComponentBase(r){}
     
-    void setBackgroundColor(ColorA c) {m_BackgroundColor = c;}
-    void setForegroundColor(ColorA c) {m_ForegroundColor = c;}
+    void draw(cairo::Context &c)
+    {
+        c.setSource(m_ForegroundColor);
+        c.line(m_P1, m_P2);
+        c.stroke();
+    }
+    
+    vec2 m_P1, m_P2;
 };
 
 class emergent::ui::PathEditor : public UiComponentBase
@@ -122,12 +139,10 @@ public:
                 if((*it).inBounds(event))
                 {
                     (*it).active = true;
-                    console() << "clicked\n";
                 }
                 else
                 {
                     (*it).active = false;
-                    console() << "false\n";
                 }
             }
         }
@@ -296,21 +311,24 @@ private:
 
 class emergent::ui::Label : public UiComponentBase
 {
-
 public:
+    enum Alignment {LEFT, RIGHT, CENTER};
+    Alignment m_Alignment;
     
     Label(string text, vec2 pos, vec2 size) : m_Text(text), m_Size(size)
     {
         m_Rect = Rectf(pos.x, pos.y, pos.x + m_Size.x, pos.y + m_Size.y);
         setBackgroundColor(ColorA(0,0,0,1));
+        m_Alignment = Alignment::LEFT;
     };
-    
+
     string m_Text = "label";
     double m_TextSize = 11;
     vec2   m_Size;
     
     void setText(string t) { m_Text = t; }
     void setTextSize(int s) { m_TextSize = s; }
+    void setAlignment(emergent::ui::Label::Alignment a){ m_Alignment = a; }
     
     void draw(cairo::Context &c)
     {
@@ -321,7 +339,21 @@ public:
         c.setSource(m_ForegroundColor);
         c.setFontSize(m_TextSize);
         cairo::TextExtents te = c.textExtents(m_Text);
-        c.moveTo(m_Rect.getCenter().x - te.width()/2.0, m_Rect.getCenter().y + te.height()/2.0);
+        
+        if(m_Alignment == LEFT)
+        {
+            c.moveTo(m_Rect.getX1(), m_Rect.getCenter().y + te.height()/2.0);
+        }
+        else if(m_Alignment == CENTER)
+        {
+            c.moveTo(m_Rect.getCenter().x - te.width()/2.0, m_Rect.getCenter().y + te.height()/2.0);
+        }
+        else if(m_Alignment == RIGHT)
+        {
+            c.moveTo(m_Rect.getX2() - te.width(), m_Rect.getCenter().y + te.height()/2.0);
+        }
+        
+        
         c.showText(m_Text);
         c.moveTo(0,0); // Move back to origin
     }
@@ -626,6 +658,12 @@ public:
             (*it)->draw(ctx);
         }
         
+        // --------------- Separators
+        for(auto it = std::begin(m_Separators); it != std::end(m_Separators); it++)
+        {
+            (*it)->draw(ctx);
+        }
+        
         gl::draw( gl::Texture::create(m_BgSurface.getSurface()) );
     }
     
@@ -660,6 +698,11 @@ public:
         m_PathEditors.push_back(pe);
     }
     
+    void addSeparator(Separator *s)
+    {
+        m_Separators.push_back(s);
+    }
+    
 private:
     cairo::SurfaceImage     m_BgSurface;
     vector<Slider *>        m_Sliders;
@@ -668,6 +711,7 @@ private:
     vector<TextEdit *>      m_TextEdits;
     vector<ColorSelector *> m_ColorSelectors;
     vector<PathEditor *>    m_PathEditors;
+    vector<Separator *>     m_Separators;
     
     Font    m_Font;
 };
