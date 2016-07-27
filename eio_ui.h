@@ -17,6 +17,7 @@
 #include "cinder/ip/Resize.h"
 
 
+
 using namespace ci;
 using namespace ci::app;
 using namespace std;
@@ -48,11 +49,12 @@ class emergent::ui::UiComponentBase
 public:
     UiComponentBase() : m_BackgroundColor(ColorA(1,1,1,0)), m_ForegroundColor(ColorA(1,1,1,1)) {};
     UiComponentBase(Rectf r) : m_Rect(r), m_BackgroundColor(ColorA(1,1,1,0)), m_ForegroundColor(ColorA(1,1,1,1)){};
-    UiComponentBase(Rectf r, ColorA bg, ColorA fg) : m_Rect(r), m_BackgroundColor(bg), m_ForegroundColor(fg) {}
+    UiComponentBase(Rectf r, ColorA bg, ColorA fg) : m_Rect(r), m_BackgroundColor(bg), m_ForegroundColor(fg) {};
     
     Rectf   getBoundingBox(){return m_Rect;}
     ColorA  getBackgroundColor(){return m_BackgroundColor;}
     ColorA  getForegroundColor(){return m_ForegroundColor;}
+    vec2    getCenter(){return m_Rect.getCenter();}
     
     string  m_Name;
     void    setName(string name) { m_Name = name; }
@@ -77,8 +79,35 @@ class emergent::ui::PathEditor : public UiComponentBase
 public:
     PathEditor(Rectf r) : UiComponentBase(r)
     {
+        getWindow()->getSignalMouseUp().connect(0,std::bind(&PathEditor::mouseUp, this, std::placeholders::_1));
         getWindow()->getSignalMouseDown().connect(0,std::bind(&PathEditor::mouseDown, this, std::placeholders::_1));
         getWindow()->getSignalMouseDrag().connect(0,std::bind(&PathEditor::mouseDrag, this, std::placeholders::_1));
+        
+        console() << "path points " << m_Path.getPoints().size() << "\n";
+        
+        vec2 ul = m_Rect.getUpperLeft();
+        
+        m_Path.moveTo(vec2(10,10) + ul);
+        m_Path.curveTo(vec2(20,20) + ul, m_Rect.getSize() + ul - vec2(10,10), m_Rect.getSize() + ul - vec2(20,20));
+        
+        initHandles();
+    }
+    
+    void initHandles()
+    {
+        m_Handles.clear();
+        
+        for(auto it = std::begin(m_Path.getPoints()); it != std::end(m_Path.getPoints()); it++)
+        {
+            double x  = (*it).x;
+            double y  = (*it).y;
+            
+            Handle h;
+            h.bounds = Rectf(x - m_HandleRadius/2.0, y - m_HandleRadius/2.0, x + m_HandleRadius/2.0, y + m_HandleRadius/2.0);
+            h.pos = (*it);
+             
+            m_Handles.push_back(h);
+        }
     }
     
     void mouseDown(MouseEvent &event)
@@ -87,6 +116,20 @@ public:
         {
             m_RetainMouseControl = true;
             event.setHandled(true);
+            
+            for(auto it = std::begin(m_Handles); it != std::end(m_Handles); it++)
+            {
+                if((*it).inBounds(event))
+                {
+                    (*it).active = true;
+                    console() << "clicked\n";
+                }
+                else
+                {
+                    (*it).active = false;
+                    console() << "false\n";
+                }
+            }
         }
         else
         {
@@ -100,23 +143,99 @@ public:
         {
             m_RetainMouseControl = false;
             event.setHandled(true);
+            
+            updatePath();
+            initHandles();
+            
+            for(auto it = std::begin(m_Handles); it != std::end(m_Handles); it++){ (*it).active = false;}
         }
     }
     
     void mouseDrag(MouseEvent &event)
     {
-        if(m_RetainMouseControl)
+        if(m_RetainMouseControl && inBounds(event))
         {
             event.setHandled(true);
             
+            for(auto it = std::begin(m_Handles); it != std::end(m_Handles); it++)
+            {
+                if((*it).active)
+                {
+                    (*it).pos = event.getPos();
+                    
+                    updatePath();
+                    break;
+                }
+            }
+            
+            //initHandles();
         }
     }
     
     void draw(cairo::Context &c)
     {
+        c.setSource(ColorA(0.2,0.2,0.2,1));
         c.rectangle(m_Rect);
         c.fill();
+        
+        c.setSource(Color::white());
+        c.appendPath(m_Path);
+        c.stroke();
+        
+        int i = 0;
+        for(auto it = std::begin(m_Path.getPoints()); it != std::end(m_Path.getPoints()); it++)
+        {
+            c.setSource(Color::white());
+            
+            
+            if( i % 2)
+            {
+                c.setSource(Color::black());
+            }
+            
+            i++;
+            
+            c.circle(*it, 3);
+            c.fill();
+        }
     }
+    
+    Path2d m_Path;
+    
+    void updatePath()
+    {
+        for(int i = 0; i < m_Handles.size(); i++)
+        {
+            m_Path.setPoint(i, m_Handles[i].pos);
+        }
+        
+        
+    }
+    
+    Path2d getPath()
+    {
+        return m_Path;
+    }
+    
+    struct Handle
+    {
+        vec2  pos;
+        Rectf bounds;
+        bool  active = false;
+        
+        bool inBounds(MouseEvent &event)
+        {
+            if(bounds.contains(event.getPos()))
+            {
+                return true;
+            }
+            
+            return false;
+        }
+    };
+    
+    vector<Handle> m_Handles;
+    float m_HandleRadius = 5;
 };
 
 class emergent::ui::ColorSelector : public UiComponentBase
@@ -501,6 +620,12 @@ public:
             (*it)->draw(ctx);
         }
         
+        // --------------- Path Editors
+        for(auto it = std::begin(m_PathEditors); it != std::end(m_PathEditors); it++)
+        {
+            (*it)->draw(ctx);
+        }
+        
         gl::draw( gl::Texture::create(m_BgSurface.getSurface()) );
     }
     
@@ -530,13 +655,19 @@ public:
         m_ColorSelectors.push_back(cs);
     }
     
+    void addPathEditor(PathEditor *pe)
+    {
+        m_PathEditors.push_back(pe);
+    }
+    
 private:
-    cairo::SurfaceImage m_BgSurface;
-    vector<Slider *>    m_Sliders;
-    vector<Label  *>    m_Labels;
-    vector<Button *>    m_Buttons;
-    vector<TextEdit *>  m_TextEdits;
+    cairo::SurfaceImage     m_BgSurface;
+    vector<Slider *>        m_Sliders;
+    vector<Label  *>        m_Labels;
+    vector<Button *>        m_Buttons;
+    vector<TextEdit *>      m_TextEdits;
     vector<ColorSelector *> m_ColorSelectors;
+    vector<PathEditor *>    m_PathEditors;
     
     Font    m_Font;
 };
