@@ -13,6 +13,9 @@
 #include "cinder/app/RendererGl.h"
 #include "cinder/gl/gl.h"
 #include "cinder/cairo/Cairo.h"
+#include "cinder/Signals.h"
+#include "cinder/ip/Resize.h"
+
 
 using namespace ci;
 using namespace ci::app;
@@ -26,7 +29,15 @@ namespace emergent
         class UiComponentBase;
         class Label;
         class Button;
+        class TextEdit;
         class Slider;
+        class ColorSelector;
+        class PathEditor;
+    }
+    
+    namespace geom
+    {
+        class SuperShape2D;
     }
 }
 
@@ -36,11 +47,15 @@ class emergent::ui::UiComponentBase
 {
 public:
     UiComponentBase() : m_BackgroundColor(ColorA(1,1,1,0)), m_ForegroundColor(ColorA(1,1,1,1)) {};
+    UiComponentBase(Rectf r) : m_Rect(r), m_BackgroundColor(ColorA(1,1,1,0)), m_ForegroundColor(ColorA(1,1,1,1)){};
     UiComponentBase(Rectf r, ColorA bg, ColorA fg) : m_Rect(r), m_BackgroundColor(bg), m_ForegroundColor(fg) {}
     
     Rectf   getBoundingBox(){return m_Rect;}
     ColorA  getBackgroundColor(){return m_BackgroundColor;}
     ColorA  getForegroundColor(){return m_ForegroundColor;}
+    
+    string  m_Name;
+    void    setName(string name) { m_Name = name; }
     
 protected:
     Rectf   m_Rect;
@@ -55,7 +70,109 @@ protected:
     
     void setBackgroundColor(ColorA c) {m_BackgroundColor = c;}
     void setForegroundColor(ColorA c) {m_ForegroundColor = c;}
+};
+
+class emergent::ui::PathEditor : public UiComponentBase
+{
+public:
+    PathEditor(Rectf r) : UiComponentBase(r)
+    {
+        getWindow()->getSignalMouseDown().connect(0,std::bind(&PathEditor::mouseDown, this, std::placeholders::_1));
+        getWindow()->getSignalMouseDrag().connect(0,std::bind(&PathEditor::mouseDrag, this, std::placeholders::_1));
+    }
     
+    void mouseDown(MouseEvent &event)
+    {
+        if(inBounds(event))
+        {
+            m_RetainMouseControl = true;
+            event.setHandled(true);
+        }
+        else
+        {
+            m_RetainMouseControl = false;
+        }
+    }
+    
+    void mouseUp(MouseEvent &event)
+    {
+        if(m_RetainMouseControl)
+        {
+            m_RetainMouseControl = false;
+            event.setHandled(true);
+        }
+    }
+    
+    void mouseDrag(MouseEvent &event)
+    {
+        if(m_RetainMouseControl)
+        {
+            event.setHandled(true);
+            
+        }
+    }
+    
+    void draw(cairo::Context &c)
+    {
+        c.rectangle(m_Rect);
+        c.fill();
+    }
+};
+
+class emergent::ui::ColorSelector : public UiComponentBase
+{
+public:
+    ColorSelector()
+    {
+        init();
+    };
+    
+    ColorSelector(Rectf r) : UiComponentBase(r)
+    {
+        init();
+    };
+    
+    void mouseDown(MouseEvent &event)
+    {
+        if(inBounds(event))
+        {
+            m_RetainMouseControl = true;
+            m_SelectedColor = m_ColorMapImage.getSurface().getPixel(event.getPos() - (ivec2)m_Rect.getUpperLeft());
+            console() << "color: " << m_SelectedColor << "\n";
+            event.setHandled(true);
+        }
+        else
+        {
+            m_RetainMouseControl = false;
+        }
+    }
+    
+    void draw(cairo::Context &c)
+    {
+        c.setSourceSurface(m_ColorMapImage, m_Rect.getUpperLeft().x, m_Rect.getUpperLeft().y);
+        c.rectangle(m_Rect);
+        c.fill();
+    }
+    
+    ColorA m_SelectedColor;
+    
+    void setSourceImage(string path)
+    {
+        
+    }
+    
+    
+private:
+    Surface m_ColorMap;
+    cairo::SurfaceImage m_ColorMapImage;
+    
+    void init()
+    {
+        getWindow()->getSignalMouseDown().connect(0,std::bind(&ColorSelector::mouseDown, this, std::placeholders::_1));
+        m_SelectedColor = ColorA(1,1,1,1);
+        m_ColorMap = Surface( loadImage( loadResource("images/color_grid.png") ) );
+        m_ColorMapImage = cairo::SurfaceImage( ip::resizeCopy( m_ColorMap, m_ColorMap.getBounds(), m_Rect.getSize() ) );
+    }
 };
 
 class emergent::ui::Label : public UiComponentBase
@@ -70,7 +187,7 @@ public:
     };
     
     string m_Text = "label";
-    double    m_TextSize = 18;
+    double m_TextSize = 11;
     vec2   m_Size;
     
     void setText(string t) { m_Text = t; }
@@ -89,6 +206,54 @@ public:
         c.showText(m_Text);
         c.moveTo(0,0); // Move back to origin
     }
+};
+
+class emergent::ui::TextEdit : public Label
+{
+public:
+    TextEdit(string text, vec2 pos, vec2 size) : Label(text, pos, size)
+    {
+        getWindow()->getSignalKeyDown().connect(0,std::bind(&TextEdit::keyDown, this, std::placeholders::_1));
+        getWindow()->getSignalMouseDown().connect(0,std::bind(&TextEdit::mouseDown, this, std::placeholders::_1));
+    }
+    
+    void mouseDown(MouseEvent &event)
+    {
+        if(inBounds(event))
+        {
+            m_RetainKeyboardControl = true;
+            m_Text.clear();
+            event.setHandled(true);
+        }
+        else
+        {
+            m_RetainKeyboardControl = false;
+        }
+    }
+    
+    void keyDown(KeyEvent &event)
+    {
+        if(m_RetainKeyboardControl)
+        {
+            if(event.getCode() == KeyEvent::KEY_RETURN)
+            {
+                m_RetainKeyboardControl = false;
+                signal_TextChanged.emit(m_Text);
+            }
+            else if(event.getChar())
+            {
+                m_Text = m_Text + event.getChar();
+            }
+            
+            event.setHandled(true);
+        }
+    }
+    
+    typedef ci::signals::Signal< void(string) > SignalText;
+    SignalText signal_TextChanged;
+    
+private:
+    bool m_RetainKeyboardControl = false;
 };
 
 class emergent::ui::Button : public Label
@@ -111,8 +276,17 @@ public:
         if(inBounds(event))
         {
             m_RetainMouseControl = true;
-            m_ForegroundColor = m_ForegroundColorOn;
-            m_BackgroundColor = m_BackgroundColorOn;
+            
+            if(m_Mode == MOMENTARY)
+            {
+                setState(ON);
+            }
+            else if(m_Mode == TOGGLE)
+            {
+                setState(!m_State);
+                signal_ValueChanged.emit(m_State);
+            }
+            
             event.setHandled(true);
         }
     }
@@ -127,16 +301,16 @@ public:
     
     void mouseUp(MouseEvent &event)
     {
-        if(m_Mode == MOMENTARY)
-        {
-            m_ForegroundColor = m_ForegroundColorOff;
-            m_BackgroundColor = m_BackgroundColorOff;
-        }
-        
         if(m_RetainMouseControl)
         {
             m_RetainMouseControl = false;
-            //signal_Clicked.emit();
+            
+            if(m_Mode == MOMENTARY)
+            {
+                setState(OFF);
+                signal_Clicked.emit();
+            }
+            
             event.setHandled(true);
         }
     }
@@ -161,24 +335,54 @@ public:
     int m_State = OFF;
     int m_Mode  = MOMENTARY;
     
+    string m_OnText = "O N";
+    string m_OffText = "O F F";
+    
     ColorA m_BackgroundColorOn  = ColorA(0.5,0.5,0.5,1.0);
     ColorA m_ForegroundColorOn  = ColorA(0.8,0.8,0.8,1.0);
     
     ColorA m_BackgroundColorOff = ColorA(0.8,0.8,0.8,1.0);
     ColorA m_ForegroundColorOff = ColorA(0.5,0.5,0.5,1.0);
     
-    void setBackgroundOff(ColorA c) { m_BackgroundColorOff = c; }
-    void setBackgroundOn(ColorA c)  { m_BackgroundColorOn = c;  }
-    void setForegroundOff(ColorA c) { m_ForegroundColorOff = c; }
-    void setForegroundOn(ColorA c)  { m_ForegroundColorOn = c; }
+    void setBackgroundOff(ColorA c) { m_BackgroundColorOff = c; setState(m_State); }
+    void setBackgroundOn(ColorA c)  { m_BackgroundColorOn = c;  setState(m_State); }
+    void setForegroundOff(ColorA c) { m_ForegroundColorOff = c; setState(m_State); }
+    void setForegroundOn(ColorA c)  { m_ForegroundColorOn = c;  setState(m_State); }
+    void setOnOffText(string onText, string offText){m_OnText = onText; m_OffText = offText;}
     
+    typedef ci::signals::Signal< void() > SignalClicked;
+    SignalClicked signal_Clicked;
+    
+    typedef ci::signals::Signal<void(int)> SignalValueChanged;
+    SignalValueChanged signal_ValueChanged;
+    
+private:
+    void setState(int s)
+    {
+        m_State = s;
+        
+        if(m_State == ON)
+        {
+            m_ForegroundColor = m_ForegroundColorOn;
+            m_BackgroundColor = m_BackgroundColorOn;
+            
+            m_Text = m_Mode == TOGGLE ? m_OnText : m_Text;
+        }
+        else if(m_State == OFF)
+        {
+            m_ForegroundColor = m_ForegroundColorOff;
+            m_BackgroundColor = m_BackgroundColorOff;
+            
+            m_Text = m_Mode == TOGGLE ? m_OffText : m_Text;
+        }
+    }
 };
 
 class emergent::ui::Slider : public UiComponentBase
 {
     
 public:
-    Slider(Rectf r, ColorA bg, ColorA fg) : UiComponentBase(r, bg, fg)
+    Slider(Rectf r, ColorA bg = ColorA(0.1,0.1,0.1,1), ColorA fg = ColorA(0.9,0.9,0.9,9)) : UiComponentBase(r, bg, fg)
     {
         getWindow()->getSignalMouseDown().connect(0,std::bind(&Slider::mouseDown, this, std::placeholders::_1));
         getWindow()->getSignalMouseDrag().connect(0,std::bind(&Slider::mouseDrag, this, std::placeholders::_1));
@@ -193,6 +397,7 @@ public:
             m_RetainMouseControl = true;
             vec2 pos = event.getPos();
             m_Value = glm::clamp( (pos.x - m_Rect.getX1()) / (m_Rect.getWidth()), 0.0f , 1.0f);
+            signal_SliderChanged.emit(this);
         }
     }
     
@@ -212,6 +417,7 @@ public:
             event.setHandled(true);
             vec2 pos = event.getPos();
             m_Value = glm::clamp( (pos.x - m_Rect.getX1()) / (m_Rect.getWidth()), 0.0f , 1.0f);
+            signal_SliderChanged.emit(this);
         }
     }
     
@@ -227,6 +433,8 @@ public:
     }
     
     double m_Value = 0.5;
+    typedef ci::signals::Signal<void(Slider*)> SignalSliderChanged;
+    SignalSliderChanged signal_SliderChanged;
 
 };
 
@@ -234,7 +442,7 @@ class emergent::ui::UiView
 {
     
 public:
-    UiView() : m_Rect(0,0,250,getWindowHeight()), m_HeaderRect(0,0,500,100)
+    UiView() : m_Rect(0,0,170,getWindowHeight()), m_HeaderRect(0,0,120,100)
     {
         m_Font = Font(loadResource("fonts/InputSans-ExtraLight.ttf"), 10);
     }
@@ -244,7 +452,7 @@ public:
     
     void update()
     {
-        m_Rect = Rectf(0,0,250,getWindowHeight());
+        m_Rect = Rectf(0,0,170,getWindowHeight());
     }
     
     void draw()
@@ -269,6 +477,12 @@ public:
             (*it)->draw(ctx);
         }
         
+        // --------------- TextEdits
+        for(auto it = std::begin(m_TextEdits); it != std::end(m_TextEdits); it++)
+        {
+            (*it)->draw(ctx);
+        }
+        
         // --------------- Sliders
         for(auto it = std::begin(m_Sliders); it != std::end(m_Sliders); it++)
         {
@@ -277,6 +491,12 @@ public:
         
         // --------------- Buttons
         for(auto it = std::begin(m_Buttons); it != std::end(m_Buttons); it++)
+        {
+            (*it)->draw(ctx);
+        }
+        
+        // --------------- Color Selectors
+        for(auto it = std::begin(m_ColorSelectors); it != std::end(m_ColorSelectors); it++)
         {
             (*it)->draw(ctx);
         }
@@ -300,11 +520,23 @@ public:
         m_Buttons.push_back(b);
     }
     
+    void addTextEdit(TextEdit *t)
+    {
+        m_TextEdits.push_back(t);
+    }
+    
+    void addColorSelector(ColorSelector *cs)
+    {
+        m_ColorSelectors.push_back(cs);
+    }
+    
 private:
     cairo::SurfaceImage m_BgSurface;
     vector<Slider *>    m_Sliders;
     vector<Label  *>    m_Labels;
     vector<Button *>    m_Buttons;
+    vector<TextEdit *>  m_TextEdits;
+    vector<ColorSelector *> m_ColorSelectors;
     
     Font    m_Font;
 };
