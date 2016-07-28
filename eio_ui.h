@@ -32,9 +32,9 @@ namespace emergent
         class Button;
         class TextEdit;
         class Slider;
-        class ColorSelector;
         class PathEditor;
         class Separator;
+        class XYGraph;
     }
     
     namespace geom
@@ -104,8 +104,8 @@ public:
         
         vec2 ul = m_Rect.getUpperLeft();
         
-        m_Path.moveTo(vec2(10,10) + ul);
-        m_Path.curveTo(vec2(20,20) + ul, m_Rect.getSize() + ul - vec2(10,10), m_Rect.getSize() + ul - vec2(20,20));
+        m_Path.moveTo(vec2(0,0) + ul);
+        m_Path.curveTo(vec2(0,0) + ul, m_Rect.getSize() + ul, m_Rect.getSize() + ul);
         
         initHandles();
     }
@@ -189,27 +189,17 @@ public:
     
     void draw(cairo::Context &c)
     {
-        c.setSource(ColorA(0.2,0.2,0.2,1));
+        c.setSource(ColorA(0.1,0.1,0.1,0.2));
         c.rectangle(m_Rect);
         c.fill();
         
-        c.setSource(Color::white());
+        c.setSource(ColorA(0.8,0.8,0.8,1));
         c.appendPath(m_Path);
         c.stroke();
         
-        int i = 0;
         for(auto it = std::begin(m_Path.getPoints()); it != std::end(m_Path.getPoints()); it++)
         {
-            c.setSource(Color::white());
-            
-            
-            if( i % 2)
-            {
-                c.setSource(Color::black());
-            }
-            
-            i++;
-            
+            c.setSource(Color(0.2,0.2,0.2));
             c.circle(*it, 3);
             c.fill();
         }
@@ -229,7 +219,26 @@ public:
     
     Path2d getPath()
     {
-        return m_Path;
+        Path2d path = m_Path;
+        
+        for(int i = 0; i < m_Path.getNumPoints(); i++)
+        {
+            path.setPoint(i, m_Path.getPoints()[i] - m_Rect.getUpperLeft());
+        }
+        
+        return path;
+    }
+    
+    Path2d getPathCentered()
+    {
+        Path2d path = m_Path;
+        
+        for(int i = 0; i < m_Path.getNumPoints(); i++)
+        {
+            path.setPoint(i, m_Path.getPoints()[i] - m_Rect.getUpperLeft() + getWindowCenter());
+        }
+        
+        return path;
     }
     
     struct Handle
@@ -253,15 +262,15 @@ public:
     float m_HandleRadius = 5;
 };
 
-class emergent::ui::ColorSelector : public UiComponentBase
+class emergent::ui::XYGraph : public UiComponentBase
 {
 public:
-    ColorSelector()
+    XYGraph()
     {
-        init();
+        //init();
     };
     
-    ColorSelector(Rectf r) : UiComponentBase(r)
+    XYGraph(Rectf r) : UiComponentBase(r)
     {
         init();
     };
@@ -271,8 +280,8 @@ public:
         if(inBounds(event))
         {
             m_RetainMouseControl = true;
+            m_CurrentPoint = (vec2)event.getPos() - m_Rect.getUpperLeft();
             m_SelectedColor = m_ColorMapImage.getSurface().getPixel(event.getPos() - (ivec2)m_Rect.getUpperLeft());
-            console() << "color: " << m_SelectedColor << "\n";
             event.setHandled(true);
         }
         else
@@ -281,11 +290,48 @@ public:
         }
     }
     
+    void mouseDrag(MouseEvent &event)
+    {
+        if(m_RetainMouseControl && inBounds(event))
+        {
+            event.setHandled(true);
+            
+            m_CurrentPoint = (vec2)event.getPos() - m_Rect.getUpperLeft();
+            m_SelectedColor = m_ColorMapImage.getSurface().getPixel(event.getPos() - (ivec2)m_Rect.getUpperLeft());
+        }
+    }
+    
+    void mouseUp(MouseEvent &event)
+    {
+        if(m_RetainMouseControl)
+        {
+            m_RetainMouseControl = false;
+            event.setHandled(true);
+            m_CurrentPoint = (vec2)event.getPos() - m_Rect.getUpperLeft();
+            //m_SelectedColor = m_ColorMapImage.getSurface().getPixel(event.getPos() - (ivec2)m_Rect.getUpperLeft());
+        }
+    }
+    
     void draw(cairo::Context &c)
     {
+        vec2 ul = m_Rect.getUpperLeft();
+        
+        //c.setSource(ColorA(0.1,0.1,0.1,0.2));
         c.setSourceSurface(m_ColorMapImage, m_Rect.getUpperLeft().x, m_Rect.getUpperLeft().y);
         c.rectangle(m_Rect);
         c.fill();
+        
+        c.setSource(Color::white());
+        c.setLineWidth(1);
+        c.line(vec2(m_CurrentPoint.x + ul.x, m_Rect.getY1()), vec2(m_CurrentPoint.x + ul.x, m_Rect.getY2()));
+        c.line(vec2(m_Rect.getX1(), m_CurrentPoint.y + ul.y), vec2(m_Rect.getX2(), m_CurrentPoint.y + ul.y ));
+        c.stroke();
+        
+        c.setSource(Color::white());
+        c.rectangle(m_CurrentPoint.x + ul.x - 1, m_CurrentPoint.y + ul.y - 1, 2, 2);
+        c.fill();
+        
+        //console() << "selected color " << m_SelectedColor;
     }
     
     ColorA m_SelectedColor;
@@ -299,15 +345,21 @@ public:
 private:
     Surface m_ColorMap;
     cairo::SurfaceImage m_ColorMapImage;
+    vec2 m_CurrentPoint;
     
     void init()
     {
-        getWindow()->getSignalMouseDown().connect(0,std::bind(&ColorSelector::mouseDown, this, std::placeholders::_1));
+        getWindow()->getSignalMouseDown().connect(0,std::bind(&XYGraph::mouseDown, this, std::placeholders::_1));
+        getWindow()->getSignalMouseDrag().connect(0,std::bind(&XYGraph::mouseDrag, this, std::placeholders::_1));
+        getWindow()->getSignalMouseUp().connect(0,std::bind(&XYGraph::mouseUp, this, std::placeholders::_1));
+
+
         m_SelectedColor = ColorA(1,1,1,1);
         m_ColorMap = Surface( loadImage( loadResource("images/color_grid.png") ) );
         m_ColorMapImage = cairo::SurfaceImage( ip::resizeCopy( m_ColorMap, m_ColorMap.getBounds(), m_Rect.getSize() ) );
     }
 };
+
 
 class emergent::ui::Label : public UiComponentBase
 {
@@ -664,6 +716,12 @@ public:
             (*it)->draw(ctx);
         }
         
+        // --------------- XY Graphs
+        for(auto it = std::begin(m_XYGraphs); it != std::end(m_XYGraphs); it++)
+        {
+            (*it)->draw(ctx);
+        }
+        
         gl::draw( gl::Texture::create(m_BgSurface.getSurface()) );
     }
     
@@ -703,6 +761,11 @@ public:
         m_Separators.push_back(s);
     }
     
+    void addXYGraph(XYGraph *xyg)
+    {
+        m_XYGraphs.push_back(xyg);
+    }
+    
 private:
     cairo::SurfaceImage     m_BgSurface;
     vector<Slider *>        m_Sliders;
@@ -712,6 +775,7 @@ private:
     vector<ColorSelector *> m_ColorSelectors;
     vector<PathEditor *>    m_PathEditors;
     vector<Separator *>     m_Separators;
+    vector<XYGraph *>       m_XYGraphs;
     
     Font    m_Font;
 };
