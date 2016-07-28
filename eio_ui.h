@@ -353,7 +353,6 @@ private:
         getWindow()->getSignalMouseDrag().connect(0,std::bind(&XYGraph::mouseDrag, this, std::placeholders::_1));
         getWindow()->getSignalMouseUp().connect(0,std::bind(&XYGraph::mouseUp, this, std::placeholders::_1));
 
-
         m_SelectedColor = ColorA(1,1,1,1);
         m_ColorMap = Surface( loadImage( loadResource("images/color_grid.png") ) );
         m_ColorMapImage = cairo::SurfaceImage( ip::resizeCopy( m_ColorMap, m_ColorMap.getBounds(), m_Rect.getSize() ) );
@@ -698,12 +697,6 @@ public:
             (*it)->draw(ctx);
         }
         
-        // --------------- Color Selectors
-        for(auto it = std::begin(m_ColorSelectors); it != std::end(m_ColorSelectors); it++)
-        {
-            (*it)->draw(ctx);
-        }
-        
         // --------------- Path Editors
         for(auto it = std::begin(m_PathEditors); it != std::end(m_PathEditors); it++)
         {
@@ -746,11 +739,6 @@ public:
         m_TextEdits.push_back(t);
     }
     
-    void addColorSelector(ColorSelector *cs)
-    {
-        m_ColorSelectors.push_back(cs);
-    }
-    
     void addPathEditor(PathEditor *pe)
     {
         m_PathEditors.push_back(pe);
@@ -772,7 +760,6 @@ private:
     vector<Label  *>        m_Labels;
     vector<Button *>        m_Buttons;
     vector<TextEdit *>      m_TextEdits;
-    vector<ColorSelector *> m_ColorSelectors;
     vector<PathEditor *>    m_PathEditors;
     vector<Separator *>     m_Separators;
     vector<XYGraph *>       m_XYGraphs;
