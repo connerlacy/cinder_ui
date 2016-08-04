@@ -366,11 +366,11 @@ public:
     enum Alignment {LEFT, RIGHT, CENTER};
     Alignment m_Alignment;
     
-    Label(string text, vec2 pos, vec2 size) : m_Text(text), m_Size(size)
+    Label(string text, vec2 pos, vec2 size, emergent::ui::Label::Alignment a = Alignment::LEFT) : m_Text(text), m_Size(size)
     {
         m_Rect = Rectf(pos.x, pos.y, pos.x + m_Size.x, pos.y + m_Size.y);
         setBackgroundColor(ColorA(0,0,0,1));
-        m_Alignment = Alignment::LEFT;
+        m_Alignment = a;
     };
 
     string m_Text = "label";
@@ -463,7 +463,7 @@ class emergent::ui::Button : public Label
     
 public:
     Button(string text, vec2 pos, vec2 size, int mode = MOMENTARY) :
-    Label(text, pos, size),
+    Label(text, pos, size, Label::Alignment::CENTER),
     m_Mode(mode)
     {
         m_BackgroundColor = m_BackgroundColorOff;
