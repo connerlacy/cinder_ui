@@ -35,6 +35,7 @@ namespace emergent
         class PathEditor;
         class Separator;
         class XYGraph;
+        class ButtonMatrix;
     }
     
     namespace geom
@@ -57,6 +58,8 @@ public:
     ColorA  getForegroundColor(){return m_ForegroundColor;}
     vec2    getCenter(){return m_Rect.getCenter();}
     
+    void    setEnabled(bool enabled){m_Enabled = enabled;}
+    
     string  m_Name;
     void    setName(string name) { m_Name = name; }
     
@@ -68,10 +71,16 @@ protected:
     ColorA  m_BackgroundColor;
     ColorA  m_ForegroundColor;
     bool    m_RetainMouseControl = false;
+    bool    m_Enabled = true;
     
     bool inBounds(MouseEvent &event)
     {
-        return m_Rect.contains(event.getPos()) ? true : false;
+        if(m_Enabled)
+        {
+            return m_Rect.contains(event.getPos()) ? true : false;
+        }
+        
+        return false;
     }
 };
 
@@ -489,6 +498,8 @@ public:
                 signal_ValueChanged.emit(m_State);
             }
             
+            signal_ClickedWithSender.emit(this);
+            
             event.setHandled(true);
         }
     }
@@ -550,15 +561,29 @@ public:
     void setBackgroundOn(ColorA c)  { m_BackgroundColorOn = c;  setState(m_State); }
     void setForegroundOff(ColorA c) { m_ForegroundColorOff = c; setState(m_State); }
     void setForegroundOn(ColorA c)  { m_ForegroundColorOn = c;  setState(m_State); }
-    void setOnOffText(string onText, string offText){m_OnText = onText; m_OffText = offText;}
+    void setOnOffText(string onText, string offText)
+    {
+        m_OnText = onText;
+        m_OffText = offText;
+        if(m_State)
+        {
+            m_Text = onText;
+        }
+        else
+        {
+            m_Text = offText;
+        }
+    }
     
     typedef ci::signals::Signal< void() > SignalClicked;
     SignalClicked signal_Clicked;
     
+    typedef ci::signals::Signal< void(Button*) > SignalClickedWithSender;
+    SignalClickedWithSender signal_ClickedWithSender;
+    
     typedef ci::signals::Signal<void(int)> SignalValueChanged;
     SignalValueChanged signal_ValueChanged;
     
-private:
     void setState(int s)
     {
         m_State = s;
@@ -578,6 +603,65 @@ private:
             m_Text = m_Mode == TOGGLE ? m_OffText : m_Text;
         }
     }
+};
+
+class emergent::ui::ButtonMatrix
+{
+public:
+    ButtonMatrix(int mode,vec2 pos, vec2 dimensions, vec2 size) : m_Mode(mode)
+    {
+        for(int r = 0; r < dimensions.y; r++)
+        {
+            for(int c = 0; c < dimensions.x; c++)
+            {
+                vec2 buttonSize = size / dimensions - vec2(5);
+                Button *b = new Button("", vec2(c*(buttonSize.x + 5), r*(buttonSize.y + 5)) + pos, buttonSize, Button::TOGGLE);
+                b->setName(to_string(r) + "_" + to_string(c));
+                b->setBackgroundOff(ColorA(0,0,0,1));
+                b->setBackgroundOn(ColorA(1,1,1,1));
+                b->setOnOffText("", "");
+                //getWindow()->getSignalMouseUp().connect(0, std::bind(&Button::mouseUp, this, std::placeholders::_1));
+                
+                m_Buttons.push_back(b);
+            }
+        }
+        
+        for(vector<Button *>::iterator it = m_Buttons.begin(); it != m_Buttons.end(); it++)
+        {
+            (*it)->signal_ClickedWithSender.connect(0, std::bind(&ButtonMatrix::buttonClicked, this, std::placeholders::_1));
+        }
+    }
+    
+    void draw(cairo::Context &c)
+    {
+        for(vector<Button *>::iterator it = m_Buttons.begin(); it != m_Buttons.end(); it++)
+        {
+            (*it)->draw(c);
+        }
+    }
+    
+    void buttonClicked(Button *b)
+    {
+        for(vector<Button *>::iterator it = m_Buttons.begin(); it != m_Buttons.end(); it++)
+        {
+            if((*it)->m_Name == b->m_Name)
+            {
+                (*it)->setState(Button::ON);
+            }
+            else
+            {
+               (*it)->setState(Button::OFF);
+            }
+        }
+        
+        signal_ValueChanged.emit(b->m_Name);
+    }
+    
+    typedef ci::signals::Signal<void(string)> SignalValueChanged;
+    SignalValueChanged signal_ValueChanged;
+    
+    int m_Mode = 0;
+    vector<Button *> m_Buttons;
 };
 
 class emergent::ui::Slider : public UiComponentBase
@@ -649,12 +733,28 @@ public:
         m_Font = Font(loadResource("fonts/InputSans-ExtraLight.ttf"), 10);
     }
     
+    UiView(Rectf rect)
+    {
+        m_Debug = false;
+        m_Rect = rect;
+        m_Font = Font(loadResource("fonts/InputSans-ExtraLight.ttf"), 10);
+    }
+    
     Rectf m_Rect;
     Rectf m_HeaderRect;
+    bool  m_Debug = true;
     
     void update()
     {
-        m_Rect = Rectf(0,0,170,getWindowHeight());
+        if(m_Debug)
+        {
+            m_Rect = Rectf(0,0,170,getWindowHeight());
+        }
+    }
+    
+    void setRect(Rectf r)
+    {
+        m_Rect = r;
     }
     
     void draw()
@@ -670,7 +770,7 @@ public:
         ctx.paint();
         
         ctx.setSource(ColorA(1,1,1,0.25));
-        ctx.rectangle(0, 0, m_Rect.getWidth(), m_Rect.getHeight());
+        ctx.rectangle(m_Rect.getX1(), m_Rect.getY1(), m_Rect.getWidth(), m_Rect.getHeight());
         ctx.fill();
         
         // --------------- Labels
@@ -715,6 +815,12 @@ public:
             (*it)->draw(ctx);
         }
         
+        // --------------- Button Matrices
+        for(auto it = std::begin(m_ButtonMatrices); it != std::end(m_ButtonMatrices); it++)
+        {
+            (*it)->draw(ctx);
+        }
+        
         gl::draw( gl::Texture::create(m_BgSurface.getSurface()) );
     }
     
@@ -754,6 +860,74 @@ public:
         m_XYGraphs.push_back(xyg);
     }
     
+    void addButtonMatrix(ButtonMatrix *bm)
+    {
+        m_ButtonMatrices.push_back(bm);
+    }
+    
+    Font    m_Font;
+    
+    
+    void setEnabled(bool enabled)
+    {
+        m_Enabled = enabled;
+        //This will be better done later...
+        // I need to iterate everything for mouse events currently.
+        
+        // --------------- Labels
+        for(auto it = std::begin(m_Labels); it != std::end(m_Labels); it++)
+        {
+            (*it)->setEnabled(enabled);
+        }
+        
+        // --------------- TextEdits
+        for(auto it = std::begin(m_TextEdits); it != std::end(m_TextEdits); it++)
+        {
+            (*it)->setEnabled(enabled);
+        }
+        
+        // --------------- Sliders
+        for(auto it = std::begin(m_Sliders); it != std::end(m_Sliders); it++)
+        {
+            (*it)->setEnabled(enabled);
+        }
+        
+        // --------------- Buttons
+        for(auto it = std::begin(m_Buttons); it != std::end(m_Buttons); it++)
+        {
+            (*it)->setEnabled(enabled);
+        }
+        
+        // --------------- Path Editors
+        for(auto it = std::begin(m_PathEditors); it != std::end(m_PathEditors); it++)
+        {
+            (*it)->setEnabled(enabled);
+        }
+        
+        // --------------- Separators
+        for(auto it = std::begin(m_Separators); it != std::end(m_Separators); it++)
+        {
+            (*it)->setEnabled(enabled);
+        }
+        
+        // --------------- XY Graphs
+        for(auto it = std::begin(m_XYGraphs); it != std::end(m_XYGraphs); it++)
+        {
+            (*it)->setEnabled(enabled);
+        }
+        
+        // --------------- Button Matrices
+        for(auto it = std::begin(m_ButtonMatrices); it != std::end(m_ButtonMatrices); it++)
+        {
+            //(*it)->setEnabled(enabled);
+        }
+    }
+    
+    bool isEnabled()
+    {
+        return m_Enabled;
+    }
+    
 private:
     cairo::SurfaceImage     m_BgSurface;
     vector<Slider *>        m_Sliders;
@@ -763,8 +937,10 @@ private:
     vector<PathEditor *>    m_PathEditors;
     vector<Separator *>     m_Separators;
     vector<XYGraph *>       m_XYGraphs;
+    vector<ButtonMatrix *>  m_ButtonMatrices;
     
-    Font    m_Font;
+    bool m_Enabled = true;
+    
 };
 
 #endif /* eio_ui_h */
