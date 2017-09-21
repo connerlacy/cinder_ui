@@ -65,6 +65,7 @@ public:
     
     void setBackgroundColor(ColorA c) {m_BackgroundColor = c;}
     void setForegroundColor(ColorA c) {m_ForegroundColor = c;}
+    void setRect(Rectf r){m_Rect = r;}
     
 protected:
     Rectf   m_Rect;
@@ -378,7 +379,7 @@ public:
     Label(string text, vec2 pos, vec2 size, emergent::ui::Label::Alignment a = Alignment::LEFT) : m_Text(text), m_Size(size)
     {
         m_Rect = Rectf(pos.x, pos.y, pos.x + m_Size.x, pos.y + m_Size.y);
-        setBackgroundColor(ColorA(0,0,0,1));
+        setBackgroundColor(ColorA(0,0,0,0));
         m_Alignment = a;
     };
 
@@ -495,7 +496,7 @@ public:
             else if(m_Mode == TOGGLE)
             {
                 setState(!m_State);
-                signal_ValueChanged.emit(m_State);
+                signal_ValueChanged.emit(!m_State);
             }
             
             signal_ClickedWithSender.emit(this);
@@ -565,6 +566,7 @@ public:
     {
         m_OnText = onText;
         m_OffText = offText;
+        
         if(m_State)
         {
             m_Text = onText;
@@ -742,7 +744,7 @@ public:
     
     Rectf m_Rect;
     Rectf m_HeaderRect;
-    bool  m_Debug = true;
+    bool  m_Debug = false;
     
     void update()
     {
@@ -757,6 +759,11 @@ public:
         m_Rect = r;
     }
     
+    void setFont(Font f)
+    {
+        m_Font = f;
+    }
+    
     void draw()
     {
         gl::color(1,1,1);
@@ -766,10 +773,11 @@ public:
         
         m_BgSurface = cairo::SurfaceImage(m_Rect.getWidth(), m_Rect.getHeight(), true);
         cairo::Context ctx(m_BgSurface);
+        ctx.setFont(m_Font);
         ctx.setSource(ColorA(1,1,1,0));
         ctx.paint();
         
-        ctx.setSource(ColorA(1,1,1,0.25));
+        ctx.setSource(m_BackgroundColor);
         ctx.rectangle(m_Rect.getX1(), m_Rect.getY1(), m_Rect.getWidth(), m_Rect.getHeight());
         ctx.fill();
         
@@ -928,6 +936,8 @@ public:
         return m_Enabled;
     }
     
+    void setBackgroundColor(ColorA c){m_BackgroundColor = c;}
+    
 private:
     cairo::SurfaceImage     m_BgSurface;
     vector<Slider *>        m_Sliders;
@@ -941,6 +951,8 @@ private:
     
     bool m_Enabled = true;
     
+
+    ColorA m_BackgroundColor = ColorA(1,1,1,0.25);
 };
 
 #endif /* eio_ui_h */
