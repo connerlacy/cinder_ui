@@ -121,6 +121,7 @@ void cinder_ui_exampleApp::update()
 {
     m_UiView.update();
     m_UiView.setRect(Rectf(0,0,400,getWindowHeight()));
+    
 }
 
 void cinder_ui_exampleApp::draw()

@@ -640,6 +640,9 @@ public:
         {
             (*it)->draw(c);
         }
+        c.setSource(ColorA(1,1,1));
+        c.rectangle(0, 0, 300, 300);
+        c.fill();
     }
     
     void buttonClicked(Button *b)
